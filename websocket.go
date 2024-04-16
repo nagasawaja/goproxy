@@ -3,6 +3,8 @@ package goproxy
 import (
 	"bufio"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -106,16 +108,104 @@ func (proxy *ProxyHttpServer) websocketHandshake(ctx *ProxyCtx, req *http.Reques
 	return nil
 }
 
+type WebSocketFrame struct {
+	Fin     bool   // 是否是结束帧
+	Opcode  int    // 操作码
+	Payload []byte // 实际有效载荷
+}
+
+func ParseWebSocketFrame(data []byte) (*WebSocketFrame, error) {
+	if len(data) < 2 {
+		return nil, errors.New("frame is too short")
+	}
+
+	frame := &WebSocketFrame{}
+
+	// 解析FIN位和操作码
+	frame.Fin = (data[0] & 0x80) != 0
+	frame.Opcode = int(data[0] & 0x0F)
+
+	// 解析掩码和负载长度
+	mask := (data[1] & 0x80) != 0
+	payloadLength := int(data[1] & 0x7F)
+
+	offset := 2
+	if payloadLength == 126 {
+		if len(data) < 4 {
+			return nil, errors.New("frame is too short for 126")
+		}
+		payloadLength = int(data[2])<<8 | int(data[3])
+		offset += 2
+	} else if payloadLength == 127 {
+		if len(data) < 10 {
+			return nil, errors.New("frame is too short for 127")
+		}
+		payloadLength = int(data[2])<<56 | int(data[3])<<48 | int(data[4])<<40 | int(data[5])<<32 | int(data[6])<<24 | int(data[7])<<16 | int(data[8])<<8 | int(data[9])
+		offset += 8
+	}
+
+	// 解析掩码键和数据
+	if mask {
+		if len(data) < offset+4+payloadLength {
+			return nil, errors.New("frame is too short for masking")
+		}
+		maskKey := data[offset : offset+4]
+		offset += 4
+		frame.Payload = make([]byte, payloadLength)
+		for i := 0; i < payloadLength; i++ {
+			frame.Payload[i] = data[offset+i] ^ maskKey[i%4]
+		}
+	} else {
+		if len(data) < offset+payloadLength {
+			return nil, errors.New("frame is too short for payload")
+		}
+		frame.Payload = data[offset : offset+payloadLength]
+	}
+
+	return frame, nil
+}
+
 func (proxy *ProxyHttpServer) proxyWebsocket(ctx *ProxyCtx, dest io.ReadWriter, source io.ReadWriter) {
 	errChan := make(chan error, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		ctx.Warnf("Websocket error: %v", err)
-		errChan <- err
+	//cp := func(dst io.Writer, src io.Reader) {
+	//	_, err := io.Copy(dst, src)
+	//	ctx.Warnf("Websocket error: %v", err)
+	//	errChan <- err
+	//}
+	cp := func(dst io.Writer, src io.Reader, title string) {
+		buf := make([]byte, 32*1024) // 创建一个32KB的缓冲区
+		for {
+			n, err := src.Read(buf)
+			if err != nil && err != io.EOF {
+				ctx.Warnf("Websocket read error: %v", err)
+				errChan <- err
+				return
+			}
+			tt, _ := ParseWebSocketFrame(buf)
+			_ = tt
+			if n > 0 {
+				data := buf[:n]
+				// 打印从WebSocket连接读取的数据
+				fmt.Printf("cp data src:%s; data:%+v\n", title, string(tt.Payload))
+				// 此处也可以将数据转换为字符串打印，如果知道它是文本
+				// fmt.Printf("Data: %s\n", string(data))
+
+				_, err = dst.Write(data)
+				if err != nil {
+					ctx.Warnf("Websocket write error: %v", err)
+					errChan <- err
+					return
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+		}
+		errChan <- nil
 	}
 
 	// Start proxying websocket data
-	go cp(dest, source)
-	go cp(source, dest)
+	go cp(dest, source, "client")
+	go cp(source, dest, "server")
 	<-errChan
 }
