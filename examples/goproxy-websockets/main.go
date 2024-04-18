@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"github.com/elazarl/goproxy"
 	"github.com/gorilla/websocket"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -55,6 +57,33 @@ func StartProxy(wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		proxy := goproxy.NewProxyHttpServer()
+		proxy.WssHandler = func(dst io.Writer, src io.Reader) error {
+			buf := make([]byte, 32*1024) // 创建一个32KB的缓冲区
+			for {
+				n, err := src.Read(buf)
+				if err != nil && err != io.EOF {
+					return nil
+				}
+				tt, _ := goproxy.ParseWebSocketFrame(buf)
+				_ = tt
+				if n > 0 {
+					data := buf[:n]
+					// 打印从WebSocket连接读取的数据
+					fmt.Printf("cp data; data:%+v\n", string(tt.Payload))
+					// 此处也可以将数据转换为字符串打印，如果知道它是文本
+					// fmt.Printf("Data: %s\n", string(data))
+
+					_, err = dst.Write(data)
+					if err != nil {
+						return nil
+					}
+				}
+				if err == io.EOF {
+					break
+				}
+			}
+			return nil
+		}
 		proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 		proxy.Verbose = true
 

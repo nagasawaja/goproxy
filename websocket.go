@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -167,45 +166,10 @@ func ParseWebSocketFrame(data []byte) (*WebSocketFrame, error) {
 
 func (proxy *ProxyHttpServer) proxyWebsocket(ctx *ProxyCtx, dest io.ReadWriter, source io.ReadWriter) {
 	errChan := make(chan error, 2)
-	//cp := func(dst io.Writer, src io.Reader) {
-	//	_, err := io.Copy(dst, src)
-	//	ctx.Warnf("Websocket error: %v", err)
-	//	errChan <- err
-	//}
-	cp := func(dst io.Writer, src io.Reader, title string) {
-		buf := make([]byte, 32*1024) // 创建一个32KB的缓冲区
-		for {
-			n, err := src.Read(buf)
-			if err != nil && err != io.EOF {
-				ctx.Warnf("Websocket read error: %v", err)
-				errChan <- err
-				return
-			}
-			tt, _ := ParseWebSocketFrame(buf)
-			_ = tt
-			if n > 0 {
-				data := buf[:n]
-				// 打印从WebSocket连接读取的数据
-				fmt.Printf("cp data src:%s; data:%+v\n", title, string(tt.Payload))
-				// 此处也可以将数据转换为字符串打印，如果知道它是文本
-				// fmt.Printf("Data: %s\n", string(data))
-
-				_, err = dst.Write(data)
-				if err != nil {
-					ctx.Warnf("Websocket write error: %v", err)
-					errChan <- err
-					return
-				}
-			}
-			if err == io.EOF {
-				break
-			}
-		}
-		errChan <- nil
-	}
+	cp := proxy.WssHandler
 
 	// Start proxying websocket data
-	go cp(dest, source, "client")
-	go cp(source, dest, "server")
+	go cp(dest, source)
+	go cp(source, dest)
 	<-errChan
 }

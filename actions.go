@@ -1,6 +1,9 @@
 package goproxy
 
-import "net/http"
+import (
+	"io"
+	"net/http"
+)
 
 // ReqHandler will "tamper" with the request coming to the proxy server
 // If Handle returns req,nil the proxy will send the returned request
@@ -47,6 +50,8 @@ func (f FuncRespHandler) Handle(resp *http.Response, ctx *ProxyCtx) *http.Respon
 type HttpsHandler interface {
 	HandleConnect(req string, ctx *ProxyCtx) (*ConnectAction, string)
 }
+
+type HandleIoCp func(dst io.Writer, src io.Reader) error
 
 // A wrapper that would convert a function to a HttpsHandler interface type
 type FuncHttpsHandler func(host string, ctx *ProxyCtx) (*ConnectAction, string)

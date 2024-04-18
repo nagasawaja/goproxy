@@ -25,6 +25,7 @@ type ProxyHttpServer struct {
 	reqHandlers     []ReqHandler
 	respHandlers    []RespHandler
 	httpsHandlers   []HttpsHandler
+	WssHandler      HandleIoCp
 	Tr              *http.Transport
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil Tr.Dial will be used
@@ -216,7 +217,10 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		NonproxyHandler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
 		}),
-		Tr: &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
+
+		//wssHandler: func HandleIoCp(dst io.Writer, src io.Reader) {},
+		WssHandler: func(dst io.Writer, src io.Reader) error { return nil },
+		Tr:         &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
 	}
 
 	proxy.ConnectDial = dialerFromEnv(&proxy)
