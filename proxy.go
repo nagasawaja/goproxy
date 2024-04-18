@@ -219,8 +219,11 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		}),
 
 		//wssHandler: func HandleIoCp(dst io.Writer, src io.Reader) {},
-		WssHandler: func(dst io.Writer, src io.Reader) error { return nil },
-		Tr:         &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
+		WssHandler: func(dst io.Writer, src io.Reader, chanError chan error, ctx *ProxyCtx) {
+			_, err := io.Copy(dst, src)
+			chanError <- err
+		},
+		Tr: &http.Transport{TLSClientConfig: tlsClientSkipVerify, Proxy: http.ProxyFromEnvironment},
 	}
 
 	proxy.ConnectDial = dialerFromEnv(&proxy)

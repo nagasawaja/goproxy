@@ -51,7 +51,7 @@ type HttpsHandler interface {
 	HandleConnect(req string, ctx *ProxyCtx) (*ConnectAction, string)
 }
 
-type HandleIoCp func(dst io.Writer, src io.Reader) error
+type HandleIoCp func(dst io.Writer, src io.Reader, chanError chan error, ctx *ProxyCtx)
 
 // A wrapper that would convert a function to a HttpsHandler interface type
 type FuncHttpsHandler func(host string, ctx *ProxyCtx) (*ConnectAction, string)

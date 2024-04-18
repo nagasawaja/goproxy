@@ -169,7 +169,7 @@ func (proxy *ProxyHttpServer) proxyWebsocket(ctx *ProxyCtx, dest io.ReadWriter, 
 	cp := proxy.WssHandler
 
 	// Start proxying websocket data
-	go cp(dest, source)
-	go cp(source, dest)
+	go cp(dest, source, errChan, ctx)
+	go cp(source, dest, errChan, ctx)
 	<-errChan
 }

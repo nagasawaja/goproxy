@@ -44,7 +44,7 @@ func StartEchoServer(wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		http.HandleFunc("/", echo)
-		err := http.ListenAndServeTLS(":12345", "localhost.pem", "localhost-key.pem", nil)
+		err := http.ListenAndServeTLS(":9098", "localhost.pem", "localhost-key.pem", nil)
 		if err != nil {
 			panic("ListenAndServe: " + err.Error())
 		}
@@ -57,12 +57,13 @@ func StartProxy(wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		proxy := goproxy.NewProxyHttpServer()
-		proxy.WssHandler = func(dst io.Writer, src io.Reader) error {
+		proxy.WssHandler = func(dst io.Writer, src io.Reader, chanError chan error, ctx *goproxy.ProxyCtx) {
 			buf := make([]byte, 32*1024) // 创建一个32KB的缓冲区
 			for {
 				n, err := src.Read(buf)
 				if err != nil && err != io.EOF {
-					return nil
+					chanError <- nil
+					return
 				}
 				tt, _ := goproxy.ParseWebSocketFrame(buf)
 				_ = tt
@@ -75,19 +76,21 @@ func StartProxy(wg *sync.WaitGroup) {
 
 					_, err = dst.Write(data)
 					if err != nil {
-						return nil
+						chanError <- nil
+						return
 					}
 				}
 				if err == io.EOF {
+					chanError <- nil
 					break
 				}
 			}
-			return nil
+			return
 		}
 		proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 		proxy.Verbose = true
 
-		err := http.ListenAndServe(":54321", proxy)
+		err := http.ListenAndServe(":9099", proxy)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -102,8 +105,8 @@ func main() {
 	StartEchoServer(wg)
 	StartProxy(wg)
 
-	endpointUrl := "wss://localhost:12345"
-	proxyUrl := "http://localhost:54321"
+	endpointUrl := "wss://localhost:9098"
+	proxyUrl := "http://localhost:9099"
 
 	surl, _ := url.Parse(proxyUrl)
 	dialer := websocket.Dialer{
